@@ -4,17 +4,17 @@ on:
   push:
     branches:
       - main
-      - release/*
-  pull_request:
-    branches:
-      - main
+
+env:
+  PROJECT_ID: balancerd-staging
+  PROJECT_NAME: temporal-registry
+  REGION: europe-west3
 
 jobs:
   build-push-images:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v2
         with:
           submodules: "true"
 
@@ -23,12 +23,21 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
+      - uses: google-github-actions/setup-gcloud@v0
+        with:
+          version: "359.0.0"
+          project_id: ${{ env.PROJECT_ID }}
+          service_account_key: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_STAGING }}
 
-      - name: Login to DockerHub
+      - name: "Install gcloud beta"
+        run: gcloud components install beta
+
+      - name: Login to GCR
         uses: docker/login-action@v1
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ${{ env.REGION }}-docker.pkg.dev
+          username: _json_key
+          password: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_STAGING }}
 
       - name: Prepare build args
         id: build_args
@@ -41,87 +50,36 @@ jobs:
 
 ### BUILD & PUSH SERVER IMAGE ###
 
-      - name: Metatags for the Server image
-        id: meta_server
-        uses: docker/metadata-action@v3
-        with:
-          images: temporaliotest/server
-          tags: |
-            type=sha,format=short,event=branch
-            latest
-
       - name: Build-Push Server image
         uses: docker/build-push-action@v2
         with:
           context: .
-          push: ${{ steps.build_args.outputs.push }}
+          push: true
           file: server.Dockerfile
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta_server.outputs.tags }}
-          labels: ${{ steps.meta_server.outputs.labels }}
+          tags: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.PROJECT_NAME }}/server:${{ github.sha }}
 
 ### BUILD & PUSH ADMIN TOOLS IMAGE ###
 
-      - name: Metatags for the Admin Tools image
-        if: steps.build_args.outputs.push == 'true'
-        id: meta_admin_tools
-        uses: docker/metadata-action@v3
-        with:
-          images: temporaliotest/admin-tools
-          tags: |
-            type=sha,format=short,event=branch
-            latest
-
       - name: Build-Push Admin Tools
-        if: steps.build_args.outputs.push == 'true'
         uses: docker/build-push-action@v2
         with:
           context: .
-          push: ${{ steps.build_args.outputs.push }}
+          push: true
           file: admin-tools.Dockerfile
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta_admin_tools.outputs.tags }}
-          labels: ${{ steps.meta_admin_tools.outputs.labels }}
+          tags: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.PROJECT_NAME }}/admin-tools:${{ github.sha }}
           build-args: |
-            SERVER_IMAGE=temporaliotest/server:${{ steps.build_args.outputs.image_tag }}
-
-      - name: Dispatch CICD
-        if: steps.build_args.outputs.push == 'true'
-        env:
-          PAT: ${{ secrets.COMMANDER_DATA_TOKEN }}
-          PARENT_REPO: temporalio/cicd-builds
-          WORKFLOW_ID: publish-stage-results.yml
-          PARENT_BRANCH: ${{ toJSON('master') }}
-          STAGE: ${{ toJSON('builds') }}
-          COMPONENT: ${{ toJSON('temporal') }}
-          TAG: ${{ steps.build_args.outputs.image_tag }}
-          AUTHOR: ${{ toJSON(github.event.head_commit.author.name) }}
-          COMMIT_MESSAGE: ${{ toJSON(github.event.head_commit.message) }}
-        run: |
-          curl -fL -X POST -H "Accept: application/vnd.github.v3+json" -H "Authorization: token $PAT" "https://api.github.com/repos/$PARENT_REPO/actions/workflows/$WORKFLOW_ID/dispatches" -d '{"ref":'"$PARENT_BRANCH"', "inputs": { "stage":'"$STAGE"', "component":'"$COMPONENT"', "image_tag":"'"$TAG"'", "commit_author":'"$AUTHOR"', "commit_message":'"$COMMIT_MESSAGE"' }}'
+            SERVER_IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.PROJECT_NAME }}/server:${{ github.sha }}
 
 ### BUILD & PUSH AUTO SETUP IMAGE ###
-
-      - name: Metatags for the Auto Setup image
-        if: steps.build_args.outputs.push == 'true'
-        id: meta_auto_setup
-        uses: docker/metadata-action@v3
-        with:
-          images: temporaliotest/auto-setup
-          tags: |
-            type=sha,format=short,event=branch
-            latest
 
       - name: Build-Push Auto Setup
         if: steps.build_args.outputs.push == 'true'
         uses: docker/build-push-action@v2
         with:
           context: .
-          push: ${{ steps.build_args.outputs.push }}
+          push: true
           file: auto-setup.Dockerfile
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta_auto_setup.outputs.tags }}
-          labels: ${{ steps.meta_auto_setup.outputs.labels }}
+          tags: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.PROJECT_NAME }}/auto-setup:${{ github.sha }}
           build-args: |
-            SERVER_IMAGE=temporaliotest/server:${{ steps.build_args.outputs.image_tag }}
-            ADMIN_TOOLS_IMAGE=temporaliotest/admin-tools:${{ steps.build_args.outputs.image_tag }}
+            SERVER_IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.PROJECT_NAME }}/server:${{ github.sha }}
+            ADMIN_TOOLS_IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.PROJECT_NAME }}/admin-tools:${{ github.sha }}

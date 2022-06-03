@@ -34,6 +34,12 @@ RUN addgroup -g 1000 temporal
 RUN adduser -u 1000 -G temporal -D temporal
 RUN mkdir /etc/temporal/config
 RUN chown -R temporal:temporal /etc/temporal/config
+
+# adding cloud proxy
+ADD https://storage.googleapis.com/cloudsql-proxy/v1.29.0/cloud_sql_proxy.linux.amd64 ./cloud_sql_proxy
+RUN chown temporal:temporal /etc/temporal/cloud_sql_proxy
+RUN chmod +x cloud_sql_proxy
+
 USER temporal
 
 # binaries
