@@ -23,4 +23,4 @@ COPY ./docker/auto-setup.sh /etc/temporal/auto-setup.sh
 
 CMD ["autosetup"]
 
-ENTRYPOINT ./cloud_sql_proxy -instances=balancerd-staging:europe-west3:django-core-database=tcp:5432 & /etc/temporal/entrypoint.sh
+ENTRYPOINT ["/etc/temporal/entrypoint.sh"]
